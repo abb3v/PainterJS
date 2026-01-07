@@ -1,0 +1,2 @@
++com.breakinblocks.painterjs.kjs
++com.breakinblocks.painterjs.objects

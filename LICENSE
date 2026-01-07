@@ -1,0 +1,20 @@
+PAINTERJS GENTLEMEN'S AGREEMENT & LICENSE
+
+1. THE GENTLEMEN'S AGREEMENT
+To maintain a healthy modding ecosystem and prevent version fragmentation, we operate under a "Gentlemen's Agreement":
+Please do NOT distribute public forks or re-releases of this software unless the project has been inactive for at least six (6) months (no commits, releases, or bug fixes from Tazz).
+
+If the project is active, please contribute your changes back via Pull Requests! We would love to have your help.
+
+2. BASE LICENSE
+Subject to the agreement above, this software is licensed under the GNU Lesser General Public License v3.0 (LGPL-3.0).
+
+-------------------------------------------------------------------------
+GNU LESSER GENERAL PUBLIC LICENSE
+Version 3, 29 June 2007
+
+Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>
+Everyone is permitted to copy and distribute verbatim copies
+of this license document, but changing it is not allowed.
+
+(See https://www.gnu.org/licenses/lgpl-3.0.txt for full text)
