@@ -59,6 +59,13 @@ public abstract class PaintObject {
 
     public final ColorProperty color = new ColorProperty();
 
+    // TTL & fade (in seconds, -1 = infinite/disabled)
+    public float ttl = -1;
+    public float fadeIn = 0;
+    public float fadeOut = 0;
+    public transient double spawnTime = -1;
+    public transient float alphaMultiplier = 1.0f;
+
     public boolean remove;
 
     public PaintObject() {
@@ -209,6 +216,12 @@ public abstract class PaintObject {
         
         if (json.has("color")) color.deserialize(json.get("color"));
 
+        // TTL: accept both "ttl" and "time"
+        if (json.has("ttl")) ttl = json.get("ttl").getAsFloat();
+        else if (json.has("time")) ttl = json.get("time").getAsFloat();
+        if (json.has("fadeIn")) fadeIn = json.get("fadeIn").getAsFloat();
+        if (json.has("fadeOut")) fadeOut = json.get("fadeOut").getAsFloat();
+
         // Backwards compatibility for 'align'
         if (json.has("align")) {
             String a = json.get("align").getAsString();
@@ -236,8 +249,12 @@ public abstract class PaintObject {
         moveY = readFloatOrExpr(buf, v -> moveYExpr = v);
         expandW = readFloatOrExpr(buf, v -> expandWExpr = v);
         expandH = readFloatOrExpr(buf, v -> expandHExpr = v);
-        
+
         color.read(buf);
+
+        ttl = buf.readFloat();
+        fadeIn = buf.readFloat();
+        fadeOut = buf.readFloat();
     }
 
     protected float readFloatOrExpr(RegistryFriendlyByteBuf buf, Consumer<String> exprSetter) {
@@ -274,8 +291,12 @@ public abstract class PaintObject {
         writeFloat(buf, moveY, moveYExpr);
         writeFloat(buf, expandW, expandWExpr);
         writeFloat(buf, expandH, expandHExpr);
-        
+
         color.write(buf);
+
+        buf.writeFloat(ttl);
+        buf.writeFloat(fadeIn);
+        buf.writeFloat(fadeOut);
     }
 
     public abstract String getType();

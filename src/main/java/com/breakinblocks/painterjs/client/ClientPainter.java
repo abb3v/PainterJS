@@ -21,10 +21,12 @@ public class ClientPainter {
     private static boolean needsVarUpdate = true;
 
     public static void update(Map<String, PaintObject> newObjects) {
+        double now = System.currentTimeMillis() / 1000.0;
         newObjects.forEach((id, obj) -> {
             if (obj.remove) {
                 OBJECTS.remove(id);
             } else {
+                obj.spawnTime = now;
                 OBJECTS.put(id, obj);
             }
         });
@@ -54,9 +56,46 @@ public class ClientPainter {
         Map<String, Double> fullVars = new HashMap<>(CACHED_VARS);
         fullVars.putAll(frameVars);
 
+        // Remove expired objects and compute alpha
+        double now = System.currentTimeMillis() / 1000.0;
+        OBJECTS.entrySet().removeIf(entry -> {
+            PaintObject obj = entry.getValue();
+            if (obj.ttl > 0 && obj.spawnTime > 0) {
+                float elapsed = (float) (now - obj.spawnTime);
+                if (elapsed >= obj.ttl) {
+                    needsResort = true;
+                    return true;
+                }
+            }
+            return false;
+        });
+
         for (PaintObject obj : OBJECTS.values()) {
             if (obj.update(fullVars)) {
                 needsResort = true;
+            }
+
+            // Compute alpha multiplier based on TTL lifecycle
+            if (obj.ttl > 0 && obj.spawnTime > 0) {
+                float elapsed = (float) (now - obj.spawnTime);
+                float alpha = 1.0f;
+
+                // Fade in
+                if (obj.fadeIn > 0 && elapsed < obj.fadeIn) {
+                    alpha = Math.min(alpha, elapsed / obj.fadeIn);
+                }
+
+                // Fade out
+                if (obj.fadeOut > 0) {
+                    float timeLeft = obj.ttl - elapsed;
+                    if (timeLeft < obj.fadeOut) {
+                        alpha = Math.min(alpha, timeLeft / obj.fadeOut);
+                    }
+                }
+
+                obj.alphaMultiplier = Math.max(0, Math.min(1, alpha));
+            } else {
+                obj.alphaMultiplier = 1.0f;
             }
         }
 
@@ -123,6 +162,8 @@ public class ClientPainter {
     }
 
     private static void drawObject(GuiGraphics graphics, PaintObject obj, int sw, int sh) {
+        if (obj.alphaMultiplier <= 0) return;
+
         float x = obj.x;
         float y = obj.y;
 
@@ -143,19 +184,25 @@ public class ClientPainter {
         graphics.pose().translate(x, y, 0);
 
         if (obj instanceof PaintRectangle rect) {
-            drawRectangle(graphics, rect);
+            drawRectangle(graphics, rect, obj.alphaMultiplier);
         } else if (obj instanceof PaintGradient grad) {
-            drawGradient(graphics, grad);
+            drawGradient(graphics, grad, obj.alphaMultiplier);
         } else if (obj instanceof PaintText text) {
-            drawText(graphics, text);
+            drawText(graphics, text, obj.alphaMultiplier);
         } else if (obj instanceof PaintItem item) {
-            drawItem(graphics, item);
+            drawItem(graphics, item, obj.alphaMultiplier);
         }
 
         graphics.pose().popPose();
     }
 
-    private static void drawRectangle(GuiGraphics graphics, PaintRectangle rect) {
+    private static int applyAlpha(int color, float alphaMul) {
+        if (alphaMul >= 1.0f) return color;
+        int a = (int) (((color >> 24) & 0xFF) * alphaMul);
+        return (a << 24) | (color & 0x00FFFFFF);
+    }
+
+    private static void drawRectangle(GuiGraphics graphics, PaintRectangle rect, float alphaMul) {
         float w = rect.w + rect.expandW;
         float h = rect.h + rect.expandH;
 
@@ -164,7 +211,7 @@ public class ClientPainter {
             RenderSystem.setShaderTexture(0, rect.texture);
             RenderSystem.enableBlend();
 
-            int color = rect.color.value;
+            int color = applyAlpha(rect.color.value, alphaMul);
             float r = ((color >> 16) & 0xFF) / 255f;
             float g = ((color >> 8) & 0xFF) / 255f;
             float b = (color & 0xFF) / 255f;
@@ -181,11 +228,13 @@ public class ClientPainter {
 
             RenderSystem.disableBlend();
         } else {
-            graphics.fill(0, 0, (int) w, (int) h, rect.color.value);
+            if (alphaMul < 1.0f) RenderSystem.enableBlend();
+            graphics.fill(0, 0, (int) w, (int) h, applyAlpha(rect.color.value, alphaMul));
+            if (alphaMul < 1.0f) RenderSystem.disableBlend();
         }
     }
 
-    private static void drawGradient(GuiGraphics graphics, PaintGradient grad) {
+    private static void drawGradient(GuiGraphics graphics, PaintGradient grad, float alphaMul) {
         float w = grad.w + grad.expandW;
         float h = grad.h + grad.expandH;
 
@@ -204,10 +253,10 @@ public class ClientPainter {
                 : DefaultVertexFormat.POSITION_COLOR;
         BufferBuilder buffer = Tesselator.getInstance().begin(VertexFormat.Mode.QUADS, format);
 
-        addVertex(buffer, matrix, 0, h, grad.colorBL.value, grad.u0, grad.v1, grad.texture != null);
-        addVertex(buffer, matrix, w, h, grad.colorBR.value, grad.u1, grad.v1, grad.texture != null);
-        addVertex(buffer, matrix, w, 0, grad.colorTR.value, grad.u1, grad.v0, grad.texture != null);
-        addVertex(buffer, matrix, 0, 0, grad.colorTL.value, grad.u0, grad.v0, grad.texture != null);
+        addVertex(buffer, matrix, 0, h, applyAlpha(grad.colorBL.value, alphaMul), grad.u0, grad.v1, grad.texture != null);
+        addVertex(buffer, matrix, w, h, applyAlpha(grad.colorBR.value, alphaMul), grad.u1, grad.v1, grad.texture != null);
+        addVertex(buffer, matrix, w, 0, applyAlpha(grad.colorTR.value, alphaMul), grad.u1, grad.v0, grad.texture != null);
+        addVertex(buffer, matrix, 0, 0, applyAlpha(grad.colorTL.value, alphaMul), grad.u0, grad.v0, grad.texture != null);
 
         BufferUploader.drawWithShader(buffer.buildOrThrow());
         RenderSystem.disableBlend();
@@ -225,11 +274,11 @@ public class ClientPainter {
             buf.setUv(u, v);
     }
 
-    private static void drawText(GuiGraphics graphics, PaintText text) {
+    private static void drawText(GuiGraphics graphics, PaintText text, float alphaMul) {
         graphics.pose().pushPose();
         graphics.pose().scale(text.scale, text.scale, 1.0f);
 
-        int color = text.color.value;
+        int color = applyAlpha(text.color.value, alphaMul);
         float yOff = 0;
 
         List<Component> allLines = new ArrayList<>();
@@ -255,7 +304,7 @@ public class ClientPainter {
         graphics.pose().popPose();
     }
 
-    private static void drawItem(GuiGraphics graphics, PaintItem item) {
+    private static void drawItem(GuiGraphics graphics, PaintItem item, float alphaMul) {
         if (!item.item.isEmpty()) {
             graphics.pose().pushPose();
             if (item.rotation != 0) {
@@ -264,10 +313,23 @@ public class ClientPainter {
                 graphics.pose().translate(-8, -8, 0);
             }
 
+            if (alphaMul < 1.0f) {
+                // Apply alpha via color modulation for items
+                float a = alphaMul;
+                RenderSystem.enableBlend();
+                RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, a);
+            }
+
             graphics.renderItem(item.item, 0, 0);
             if (item.overlay) {
                 graphics.renderItemDecorations(Minecraft.getInstance().font, item.item, 0, 0, item.customText);
             }
+
+            if (alphaMul < 1.0f) {
+                RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+                RenderSystem.disableBlend();
+            }
+
             graphics.pose().popPose();
         }
     }
