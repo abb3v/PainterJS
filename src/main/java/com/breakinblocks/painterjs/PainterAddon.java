@@ -2,6 +2,7 @@ package com.breakinblocks.painterjs;
 
 import com.breakinblocks.painterjs.client.ClientPainter;
 import com.breakinblocks.painterjs.network.PainterNetwork;
+import net.minecraft.resources.ResourceLocation;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -9,7 +10,6 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
-import net.minecraft.resources.ResourceLocation;
 
 @Mod(PainterAddon.MODID)
 public class PainterAddon {

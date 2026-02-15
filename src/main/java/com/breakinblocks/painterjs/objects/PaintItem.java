@@ -22,10 +22,16 @@ public class PaintItem extends PaintObject {
         super.deserialize(json);
         if (json.has("item")) {
             String itemId = json.get("item").getAsString();
-            item = new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse(itemId)));
+            ResourceLocation id = ResourceLocation.tryParse(itemId);
+            if (id != null && BuiltInRegistries.ITEM.containsKey(id)) {
+                item = new ItemStack(BuiltInRegistries.ITEM.get(id));
+            }
         } else if (json.has("id")) {
             String itemId = json.get("id").getAsString();
-            item = new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse(itemId)));
+            ResourceLocation id = ResourceLocation.tryParse(itemId);
+            if (id != null && BuiltInRegistries.ITEM.containsKey(id)) {
+                item = new ItemStack(BuiltInRegistries.ITEM.get(id));
+            }
         }
 
         if (json.has("overlay"))
