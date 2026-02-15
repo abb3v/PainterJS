@@ -18,6 +18,8 @@ import java.util.Map;
 public class PainterNetwork {
     public static final ResourceLocation PAINT_CHANNEL = ResourceLocation.fromNamespaceAndPath(PainterAddon.MODID,
             "paint");
+    public static final ResourceLocation VARS_CHANNEL = ResourceLocation.fromNamespaceAndPath(PainterAddon.MODID,
+            "vars");
 
     public record PaintDataPayload(Map<String, PaintObject> objects) implements CustomPacketPayload {
         public static final Type<PaintDataPayload> TYPE = new Type<>(PAINT_CHANNEL);
@@ -33,17 +35,42 @@ public class PainterNetwork {
         }
     }
 
+    public record VariableSyncPayload(Map<String, Double> vars) implements CustomPacketPayload {
+        public static final Type<VariableSyncPayload> TYPE = new Type<>(VARS_CHANNEL);
+
+        public static final StreamCodec<RegistryFriendlyByteBuf, VariableSyncPayload> STREAM_CODEC = StreamCodec.composite(
+                ByteBufCodecs.map(HashMap::new, ByteBufCodecs.STRING_UTF8, ByteBufCodecs.DOUBLE),
+                VariableSyncPayload::vars,
+                VariableSyncPayload::new);
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
     public static void register(RegisterPayloadHandlersEvent event) {
         PayloadRegistrar registrar = event.registrar(PainterAddon.MODID).versioned("1.0");
         registrar.playToClient(
                 PaintDataPayload.TYPE,
                 PaintDataPayload.STREAM_CODEC,
-                PainterNetwork::handle);
+                PainterNetwork::handlePaint);
+        registrar.playToClient(
+                VariableSyncPayload.TYPE,
+                VariableSyncPayload.STREAM_CODEC,
+                PainterNetwork::handleVars);
     }
 
-    public static void handle(PaintDataPayload payload, IPayloadContext context) {
+    public static void handlePaint(PaintDataPayload payload, IPayloadContext context) {
         context.enqueueWork(() -> {
             ClientPainter.update(payload.objects());
+        });
+    }
+
+    public static void handleVars(VariableSyncPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            com.breakinblocks.painterjs.kjs.Painter.vars.putAll(payload.vars());
+            ClientPainter.onVariablesUpdated();
         });
     }
 }

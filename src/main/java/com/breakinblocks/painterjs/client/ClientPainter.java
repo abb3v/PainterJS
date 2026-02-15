@@ -3,20 +3,22 @@ package com.breakinblocks.painterjs.client;
 import com.breakinblocks.painterjs.objects.*;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.*;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.DeltaTracker;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.player.Player;
 import org.joml.Matrix4f;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 public class ClientPainter {
     private static final Map<String, PaintObject> OBJECTS = new HashMap<>();
     private static final List<PaintObject> CACHED_SORTED_LIST = new ArrayList<>();
+    private static final Map<String, Double> CACHED_VARS = new HashMap<>();
     private static boolean needsResort = true;
+    private static boolean needsVarUpdate = true;
 
     public static void update(Map<String, PaintObject> newObjects) {
         newObjects.forEach((id, obj) -> {
@@ -29,15 +31,31 @@ public class ClientPainter {
         needsResort = true;
     }
 
+    public static void onVariablesUpdated() {
+        needsVarUpdate = true;
+    }
+
     public static void clear() {
         OBJECTS.clear();
         CACHED_SORTED_LIST.clear();
         needsResort = true;
     }
 
-    private static void updateObjects(Map<String, Double> vars) {
+    private static void updateObjects(Map<String, Double> frameVars) {
+        // Build the full evaluation map
+        if (needsVarUpdate) {
+            CACHED_VARS.clear();
+            com.breakinblocks.painterjs.kjs.Painter.vars.getAll().forEach((k, v) -> {
+                CACHED_VARS.put(k.startsWith("$") ? k : "$" + k, v);
+            });
+            needsVarUpdate = false;
+        }
+
+        Map<String, Double> fullVars = new HashMap<>(CACHED_VARS);
+        fullVars.putAll(frameVars);
+
         for (PaintObject obj : OBJECTS.values()) {
-            if (obj.update(vars)) {
+            if (obj.update(fullVars)) {
                 needsResort = true;
             }
         }
@@ -50,6 +68,20 @@ public class ClientPainter {
         }
     }
 
+    private static Map<String, Double> buildFrameVars(int screenWidth, int screenHeight,
+                                                       double mouseX, double mouseY,
+                                                       double delta, double time) {
+        Map<String, Double> frameVars = new HashMap<>();
+        frameVars.put("$screenW", (double) screenWidth);
+        frameVars.put("$screenH", (double) screenHeight);
+        frameVars.put("$delta", delta);
+        frameVars.put("$mouseX", mouseX);
+        frameVars.put("$mouseY", mouseY);
+        frameVars.put("$time", time);
+        frameVars.put("time", time);
+        return frameVars;
+    }
+
     public static void render(GuiGraphics graphics, DeltaTracker deltaTracker) {
         if (OBJECTS.isEmpty()) return;
 
@@ -60,15 +92,11 @@ public class ClientPainter {
         double mouseX = mc.mouseHandler.xpos() * screenWidth / (double) mc.getWindow().getScreenWidth();
         double mouseY = mc.mouseHandler.ypos() * screenHeight / (double) mc.getWindow().getScreenHeight();
         float delta = deltaTracker.getGameTimeDeltaTicks();
+        double time = (System.currentTimeMillis() % 10000000) / 1000.0;
 
-        Map<String, Double> vars = new HashMap<>();
-        vars.put("$screenW", (double) screenWidth);
-        vars.put("$screenH", (double) screenHeight);
-        vars.put("$delta", (double) delta);
-        vars.put("$mouseX", mouseX);
-        vars.put("$mouseY", mouseY);
+        Map<String, Double> frameVars = buildFrameVars(screenWidth, screenHeight, mouseX, mouseY, delta, time);
 
-        updateObjects(vars);
+        updateObjects(frameVars);
 
         for (PaintObject obj : CACHED_SORTED_LIST) {
             if (!obj.visible || obj.cachedDraw == PaintObject.DrawMode.GUI) continue;
@@ -82,15 +110,11 @@ public class ClientPainter {
         Minecraft mc = Minecraft.getInstance();
         int screenWidth = mc.getWindow().getGuiScaledWidth();
         int screenHeight = mc.getWindow().getGuiScaledHeight();
+        double time = (System.currentTimeMillis() % 10000000) / 1000.0;
 
-        Map<String, Double> vars = new HashMap<>();
-        vars.put("$screenW", (double) screenWidth);
-        vars.put("$screenH", (double) screenHeight);
-        vars.put("$delta", (double) partialTick);
-        vars.put("$mouseX", (double) mouseX);
-        vars.put("$mouseY", (double) mouseY);
+        Map<String, Double> frameVars = buildFrameVars(screenWidth, screenHeight, mouseX, mouseY, partialTick, time);
 
-        updateObjects(vars);
+        updateObjects(frameVars);
 
         for (PaintObject obj : CACHED_SORTED_LIST) {
             if (!obj.visible || obj.cachedDraw == PaintObject.DrawMode.INGAME) continue;
@@ -140,7 +164,7 @@ public class ClientPainter {
             RenderSystem.setShaderTexture(0, rect.texture);
             RenderSystem.enableBlend();
 
-            int color = rect.color;
+            int color = rect.color.value;
             float r = ((color >> 16) & 0xFF) / 255f;
             float g = ((color >> 8) & 0xFF) / 255f;
             float b = (color & 0xFF) / 255f;
@@ -157,7 +181,7 @@ public class ClientPainter {
 
             RenderSystem.disableBlend();
         } else {
-            graphics.fill(0, 0, (int) w, (int) h, rect.color);
+            graphics.fill(0, 0, (int) w, (int) h, rect.color.value);
         }
     }
 
@@ -180,17 +204,17 @@ public class ClientPainter {
                 : DefaultVertexFormat.POSITION_COLOR;
         BufferBuilder buffer = Tesselator.getInstance().begin(VertexFormat.Mode.QUADS, format);
 
-        addVertex(buffer, matrix, 0, h, grad.colorBL, grad.u0, grad.v1, grad.texture != null);
-        addVertex(buffer, matrix, w, h, grad.colorBR, grad.u1, grad.v1, grad.texture != null);
-        addVertex(buffer, matrix, w, 0, grad.colorTR, grad.u1, grad.v0, grad.texture != null);
-        addVertex(buffer, matrix, 0, 0, grad.colorTL, grad.u0, grad.v0, grad.texture != null);
+        addVertex(buffer, matrix, 0, h, grad.colorBL.value, grad.u0, grad.v1, grad.texture != null);
+        addVertex(buffer, matrix, w, h, grad.colorBR.value, grad.u1, grad.v1, grad.texture != null);
+        addVertex(buffer, matrix, w, 0, grad.colorTR.value, grad.u1, grad.v0, grad.texture != null);
+        addVertex(buffer, matrix, 0, 0, grad.colorTL.value, grad.u0, grad.v0, grad.texture != null);
 
         BufferUploader.drawWithShader(buffer.buildOrThrow());
         RenderSystem.disableBlend();
     }
 
     private static void addVertex(BufferBuilder buf, Matrix4f mat, float x, float y, int color, float u, float v,
-            boolean tex) {
+                                  boolean tex) {
         float r = ((color >> 16) & 0xFF) / 255f;
         float g = ((color >> 8) & 0xFF) / 255f;
         float b = (color & 0xFF) / 255f;
@@ -205,7 +229,7 @@ public class ClientPainter {
         graphics.pose().pushPose();
         graphics.pose().scale(text.scale, text.scale, 1.0f);
 
-        int color = text.color;
+        int color = text.color.value;
         float yOff = 0;
 
         List<Component> allLines = new ArrayList<>();
