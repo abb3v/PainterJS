@@ -57,6 +57,8 @@ public abstract class PaintObject {
     public String expandHExpr;
     private MathExpression expandHMath;
 
+    public final ColorProperty color = new ColorProperty();
+
     public boolean remove;
 
     public PaintObject() {
@@ -77,10 +79,11 @@ public abstract class PaintObject {
         if (moveYMath != null) { moveY = (float) moveYMath.eval(vars); }
         if (expandWMath != null) { expandW = (float) expandWMath.eval(vars); }
         if (expandHMath != null) { expandH = (float) expandHMath.eval(vars); }
+        color.update(vars);
         return changed;
     }
 
-    private void compile() {
+    protected void compile() {
         try {
             if (xExpr != null) xMath = MathExpression.parse(xExpr);
             if (yExpr != null) yMath = MathExpression.parse(yExpr);
@@ -91,10 +94,11 @@ public abstract class PaintObject {
             if (moveYExpr != null) moveYMath = MathExpression.parse(moveYExpr);
             if (expandWExpr != null) expandWMath = MathExpression.parse(expandWExpr);
             if (expandHExpr != null) expandHMath = MathExpression.parse(expandHExpr);
+            color.compile();
 
             updateEnums();
         } catch (Exception e) {
-            e.printStackTrace();
+            com.mojang.logging.LogUtils.getLogger().warn("Failed to compile paint object expressions", e);
         }
     }
 
@@ -202,6 +206,8 @@ public abstract class PaintObject {
         if (json.has("moveY")) setFloat(json.get("moveY"), v -> moveY = v, v -> moveYExpr = v);
         if (json.has("expandW")) setFloat(json.get("expandW"), v -> expandW = v, v -> expandWExpr = v);
         if (json.has("expandH")) setFloat(json.get("expandH"), v -> expandH = v, v -> expandHExpr = v);
+        
+        if (json.has("color")) color.deserialize(json.get("color"));
 
         // Backwards compatibility for 'align'
         if (json.has("align")) {
@@ -230,14 +236,25 @@ public abstract class PaintObject {
         moveY = readFloatOrExpr(buf, v -> moveYExpr = v);
         expandW = readFloatOrExpr(buf, v -> expandWExpr = v);
         expandH = readFloatOrExpr(buf, v -> expandHExpr = v);
+        
+        color.read(buf);
     }
 
-    private float readFloatOrExpr(RegistryFriendlyByteBuf buf, Consumer<String> exprSetter) {
+    protected float readFloatOrExpr(RegistryFriendlyByteBuf buf, Consumer<String> exprSetter) {
         if (buf.readBoolean()) {
             exprSetter.accept(buf.readUtf());
             return 0;
         } else {
             return buf.readFloat();
+        }
+    }
+
+    protected int readIntOrExpr(RegistryFriendlyByteBuf buf, Consumer<String> exprSetter) {
+        if (buf.readBoolean()) {
+            exprSetter.accept(buf.readUtf());
+            return 0;
+        } else {
+            return buf.readInt();
         }
     }
 
@@ -257,7 +274,83 @@ public abstract class PaintObject {
         writeFloat(buf, moveY, moveYExpr);
         writeFloat(buf, expandW, expandWExpr);
         writeFloat(buf, expandH, expandHExpr);
+        
+        color.write(buf);
     }
 
     public abstract String getType();
+
+    public static String replaceVars(String input, Map<String, Double> vars) {
+        if (input == null || !input.contains("$")) return input;
+        for (Map.Entry<String, Double> entry : vars.entrySet()) {
+            String key = entry.getKey();
+            if (!key.startsWith("$")) key = "$" + key;
+            
+            String valStr;
+            double val = entry.getValue();
+            if (val == (long) val) {
+                valStr = String.valueOf((long) val);
+            } else {
+                valStr = String.format("%.2f", val);
+            }
+            input = input.replace(key, valStr);
+        }
+        return input;
+    }
+
+    public static class ColorProperty {
+        public int value = 0xFFFFFFFF;
+        public String expr;
+        private MathExpression math;
+
+        public void update(Map<String, Double> vars) {
+            if (math != null) {
+                value = (int) (long) math.eval(vars);
+            }
+        }
+
+        public void compile() {
+            if (expr != null) {
+                math = MathExpression.parse(expr);
+            }
+        }
+
+        public void deserialize(JsonElement el) {
+            if (el.isJsonPrimitive() && el.getAsJsonPrimitive().isString()) {
+                String s = el.getAsString();
+                if (s.startsWith("#")) {
+                    try {
+                        long val = Long.parseLong(s.substring(1), 16);
+                        if (s.length() == 7) val |= 0xFF000000;
+                        value = (int) val;
+                    } catch (Exception e) {
+                        expr = s;
+                    }
+                } else {
+                    expr = s;
+                }
+            } else {
+                value = (int) el.getAsLong();
+            }
+        }
+
+        public void read(RegistryFriendlyByteBuf buf) {
+            if (buf.readBoolean()) {
+                expr = buf.readUtf();
+                value = 0;
+            } else {
+                expr = null;
+                value = buf.readInt();
+            }
+        }
+
+        public void write(RegistryFriendlyByteBuf buf) {
+            buf.writeBoolean(expr != null);
+            if (expr != null) {
+                buf.writeUtf(expr);
+            } else {
+                buf.writeInt(value);
+            }
+        }
+    }
 }

@@ -4,15 +4,14 @@ import com.google.gson.JsonObject;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 
+import java.util.Map;
+
 public class PaintGradient extends PaintObject {
-    public int colorT = 0xFFFFFFFF;
-    public int colorB = 0xFFFFFFFF;
-    public int colorL = 0xFFFFFFFF;
-    public int colorR = 0xFFFFFFFF;
-    public int colorTL = 0xFFFFFFFF;
-    public int colorTR = 0xFFFFFFFF;
-    public int colorBL = 0xFFFFFFFF;
-    public int colorBR = 0xFFFFFFFF;
+    public final ColorProperty colorTL = new ColorProperty();
+    public final ColorProperty colorTR = new ColorProperty();
+    public final ColorProperty colorBL = new ColorProperty();
+    public final ColorProperty colorBR = new ColorProperty();
+
     public ResourceLocation texture;
     public float u0 = 0.0f;
     public float v0 = 0.0f;
@@ -25,62 +24,75 @@ public class PaintGradient extends PaintObject {
     }
 
     @Override
+    public boolean update(Map<String, Double> vars) {
+        boolean changed = super.update(vars);
+        colorTL.update(vars);
+        colorTR.update(vars);
+        colorBL.update(vars);
+        colorBR.update(vars);
+        return changed;
+    }
+
+    @Override
+    protected void compile() {
+        super.compile();
+        colorTL.compile();
+        colorTR.compile();
+        colorBL.compile();
+        colorBR.compile();
+    }
+
+    @Override
     public void deserialize(JsonObject json) {
         super.deserialize(json);
         if (json.has("color")) {
-            int c = parseColor(json.get("color").getAsString());
-            colorT = colorB = colorL = colorR = colorTL = colorTR = colorBL = colorBR = c;
+            colorTL.deserialize(json.get("color"));
+            colorTR.deserialize(json.get("color"));
+            colorBL.deserialize(json.get("color"));
+            colorBR.deserialize(json.get("color"));
         }
-        if (json.has("colorT"))
-            colorT = parseColor(json.get("colorT").getAsString());
-        if (json.has("colorB"))
-            colorB = parseColor(json.get("colorB").getAsString());
-        if (json.has("colorL"))
-            colorL = parseColor(json.get("colorL").getAsString());
-        if (json.has("colorR"))
-            colorR = parseColor(json.get("colorR").getAsString());
-        if (json.has("colorTL"))
-            colorTL = parseColor(json.get("colorTL").getAsString());
-        if (json.has("colorTR"))
-            colorTR = parseColor(json.get("colorTR").getAsString());
-        if (json.has("colorBL"))
-            colorBL = parseColor(json.get("colorBL").getAsString());
-        if (json.has("colorBR"))
-            colorBR = parseColor(json.get("colorBR").getAsString());
+        
+        // Helpers for top/bottom/left/right
+        if (json.has("colorT")) {
+            colorTL.deserialize(json.get("colorT"));
+            colorTR.deserialize(json.get("colorT"));
+        }
+        if (json.has("colorB")) {
+            colorBL.deserialize(json.get("colorB"));
+            colorBR.deserialize(json.get("colorB"));
+        }
+        if (json.has("colorL")) {
+            colorTL.deserialize(json.get("colorL"));
+            colorBL.deserialize(json.get("colorL"));
+        }
+        if (json.has("colorR")) {
+            colorTR.deserialize(json.get("colorR"));
+            colorBR.deserialize(json.get("colorR"));
+        }
+
+        if (json.has("colorTL")) colorTL.deserialize(json.get("colorTL"));
+        if (json.has("colorTR")) colorTR.deserialize(json.get("colorTR"));
+        if (json.has("colorBL")) colorBL.deserialize(json.get("colorBL"));
+        if (json.has("colorBR")) colorBR.deserialize(json.get("colorBR"));
 
         if (json.has("texture")) {
             texture = ResourceLocation.parse(json.get("texture").getAsString());
         }
-        if (json.has("u0"))
-            u0 = json.get("u0").getAsFloat();
-        if (json.has("v0"))
-            v0 = json.get("v0").getAsFloat();
-        if (json.has("u1"))
-            u1 = json.get("u1").getAsFloat();
-        if (json.has("v1"))
-            v1 = json.get("v1").getAsFloat();
-    }
-
-    private int parseColor(String c) {
-        if (c.startsWith("#")) {
-            try {
-                long val = Long.parseLong(c.substring(1), 16);
-                if (c.length() == 7)
-                    val |= 0xFF000000;
-                return (int) val;
-            } catch (Exception ignored) {
-            }
-        }
-        return 0xFFFFFFFF;
+        
+        if (json.has("u0")) u0 = json.get("u0").getAsFloat();
+        if (json.has("v0")) v0 = json.get("v0").getAsFloat();
+        if (json.has("u1")) u1 = json.get("u1").getAsFloat();
+        if (json.has("v1")) v1 = json.get("v1").getAsFloat();
     }
 
     @Override
     public void read(RegistryFriendlyByteBuf buf) {
         super.read(buf);
-        colorTL = buf.readInt();
-        colorTR = buf.readInt();
-        colorBL = buf.readInt();
-        colorBR = buf.readInt();
+        colorTL.read(buf);
+        colorTR.read(buf);
+        colorBL.read(buf);
+        colorBR.read(buf);
+        
         if (buf.readBoolean()) {
             texture = buf.readResourceLocation();
         }
@@ -93,11 +105,11 @@ public class PaintGradient extends PaintObject {
     @Override
     public void write(RegistryFriendlyByteBuf buf) {
         super.write(buf);
-        // We only really need 4 corners for a quad, T/B/L/R are just helpers for setup
-        buf.writeInt(colorTL);
-        buf.writeInt(colorTR);
-        buf.writeInt(colorBL);
-        buf.writeInt(colorBR);
+        colorTL.write(buf);
+        colorTR.write(buf);
+        colorBL.write(buf);
+        colorBR.write(buf);
+        
         buf.writeBoolean(texture != null);
         if (texture != null) {
             buf.writeResourceLocation(texture);

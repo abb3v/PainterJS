@@ -1,7 +1,6 @@
 package com.breakinblocks.painterjs.math;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.DoubleBinaryOperator;
@@ -128,13 +127,33 @@ public class MathExpression {
                     return Math.toDegrees(v[0]);
                 case "log":
                     return Math.log(v[0]);
-                case "time":
-                    return (System.currentTimeMillis() % 1000000) / 1000.0; // Simple time
+                case "rgb":
+                    return 0xFF000000 | ((int) (v[0] * 255) << 16) | ((int) (v[1] * 255) << 8) | (int) (v[2] * 255);
+                case "hsv":
+                    return hsvToRgb(v[0], v[1], v[2]);
                 case "random":
                     return Math.random();
                 default:
                     return 0;
             }
+        }
+
+        private static int hsvToRgb(double h, double s, double v) {
+            double r = 0, g = 0, b = 0;
+            int i = (int) (h * 6);
+            double f = h * 6 - i;
+            double p = v * (1 - s);
+            double q = v * (1 - f * s);
+            double t = v * (1 - (1 - f) * s);
+            switch (i % 6) {
+                case 0: r = v; g = t; b = p; break;
+                case 1: r = q; g = v; b = p; break;
+                case 2: r = p; g = v; b = t; break;
+                case 3: r = p; g = q; b = v; break;
+                case 4: r = t; g = p; b = v; break;
+                case 5: r = v; g = p; b = q; break;
+            }
+            return 0xFF000000 | ((int) (r * 255) << 16) | ((int) (g * 255) << 8) | (int) (b * 255);
         }
     }
 
@@ -170,7 +189,7 @@ public class MathExpression {
 
         Node parseExpression() {
             Node x = parseTerm();
-            for (;;) {
+            for (; ; ) {
                 if (eat('+'))
                     x = new BinaryNode(x, parseTerm(), (a, b) -> a + b); // addition
                 else if (eat('-'))
@@ -182,7 +201,7 @@ public class MathExpression {
 
         Node parseTerm() {
             Node x = parseFactor();
-            for (;;) {
+            for (; ; ) {
                 if (eat('*'))
                     x = new BinaryNode(x, parseFactor(), (a, b) -> a * b); // multiplication
                 else if (eat('/'))
@@ -210,9 +229,9 @@ public class MathExpression {
                     nextChar();
                 x = new ConstantNode(Double.parseDouble(str.substring(startPos, pos)));
             } else if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '$' || ch == '_') { // functions or
-                                                                                                         // variables
+                // variables
                 while ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '$'
-                        || ch == '_')
+                        || ch == '_' || ch == '-')
                     nextChar();
                 String func = str.substring(startPos, pos);
                 if (eat('(')) { // function call
