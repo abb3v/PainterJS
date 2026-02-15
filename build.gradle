@@ -1,8 +1,21 @@
+import me.modmuss50.mpp.ReleaseType
+
 plugins {
     id 'java-library'
     id 'maven-publish'
     id 'idea'
     id 'net.neoforged.moddev' version '2.0.137'
+    id 'me.modmuss50.mod-publish-plugin' version '0.5.1'
+}
+
+def envFile = file('.env.local')
+if (envFile.exists()) {
+    envFile.eachLine { line ->
+        if (!line.startsWith('#') && line.contains('=')) {
+            def (key, value) = line.tokenize('=')
+            System.setProperty(key, value)
+        }
+    }
 }
 
 version = mod_version
@@ -119,5 +132,20 @@ idea {
     module {
         downloadSources = true
         downloadJavadoc = true
+    }
+}
+
+publishMods {
+    file = jar.archiveFile
+    changelog = file("CHANGELOG.md").text
+    type = ReleaseType.STABLE
+    modLoaders.add("neoforge")
+
+    curseforge {
+        projectId = project.curseforge_id
+        projectSlug = project.mod_id
+        accessToken = System.getProperty("CURSEFORGE_KEY") ?: System.getenv("CURSEFORGE_KEY")
+        minecraftVersions.add(project.minecraft_version)
+        requires("kubejs")
     }
 }
