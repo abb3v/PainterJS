@@ -41,7 +41,7 @@ PlayerEvents.loggedIn(event => {
 })
 ```
 
-For full documentation, please visit the [Wiki](https://github.com/TheonlyTazz/PainterJS/wiki).
+For full documentation, please visit our **[Wiki](wiki/Home.md)**.
 
 ## License
 
